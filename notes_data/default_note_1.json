@@ -1,7 +1,11 @@
 {
     "position": {
-        "x": 0,
-        "y": 0
+        "x": 47855,
+        "y": -12582
+    },
+    "size": {
+        "width": 217,
+        "height": 737
     },
     "content": "Testar att spara en note.\n\n"
 }

@@ -7,12 +7,13 @@ class LocalStorage:
         self.storage_dir = storage_dir
         os.makedirs(self.storage_dir, exist_ok=True)
 
-    def save_note(self, note_id: str, position: dict, markdown_content: str):
+    def save_note(self, note_id: str, position: dict, size: dict, markdown_content: str):
         filepath = os.path.join(self.storage_dir, f"{note_id}.json")
         data = {
             "position": position,
+            "size": size,
             "content": markdown_content
-        }
+            }
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
     
@@ -31,8 +32,11 @@ class LocalStorage:
             # Print a warning and return None to load a fresh note.
             print(f"Warning: File '{filepath}' is empty or corrupted. Starting with a fresh note.")
             return None
-
+    
     def delete_note(self, note_id: str) -> None:
         filepath = os.path.join(self.storage_dir, f"{note_id}.json")
         if os.path.exists(filepath):
-            os.remove(filepath)
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                print(f"Error deleting file '{filepath}': {e}")

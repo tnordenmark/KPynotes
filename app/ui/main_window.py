@@ -1,6 +1,7 @@
 # app/ui/main_window.py
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame
 from app.ui.components.editor import ScratchpadEditor
 from app.ui.components.titlebar import CustomTitleBar
 from app.core.storage import LocalStorage
@@ -33,8 +34,14 @@ class StickyNoteWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # Default size, can be adjusted later
         self.resize(300, 350)
+        # Enforce minimum size to prevent shrinking it out of existence
+        self.setMinimumSize(150, 150)
+        
+        # Allow window to track mouse without clicking
+        self.setMouseTracking(True)
 
     def init_ui(self):
+        self.title_bar = CustomTitleBar(title="KPynotes", parent=self)
         # Base layout, 0 margins so the frame dictates the borders
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -42,21 +49,50 @@ class StickyNoteWindow(QWidget):
         # Main container, i.e the actual sticky note
         self.container = QFrame(self)
         self.container.setObjectName("NoteContainer")
+        # Make sure container doesn't block mouse tracking
+        self.container.setMouseTracking(True)
         main_layout.addWidget(self.container)
         
-        # Container layout
+        # Vertical container layout
         container_layout = QVBoxLayout(self.container)
+        # Set margins to use as resize border
         container_layout.setContentsMargins(8, 8, 8, 8)
         
-        # Add custom components
+        # Add custom title bar and editor to the container
         self.title_bar = CustomTitleBar(title="KPynotes", parent=self)
         self.title_bar.close_requested.connect(self.close)
         
-        # Use the custom editor with built-in formatting!
         self.editor = ScratchpadEditor(self)
         
-        container.layout().addWidget(self.title_bar)
-        container.layout().addWidget(self.editor)
+        # To capture mouse events for moving the window
+        self.container.installEventFilter(self)
+
+        # Create a horizontal layout for the bottom row to hold
+        # resize handles
+        # bottom_layout = QHBoxLayout()
+        # bottom_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Bottom left resize grip
+        # self.size_grip_bottom_left = QSizeGrip(self)
+        # self.size_grip_bottom_left.setFixedSize(16, 16)
+        # # Use SizeBDiagCursor for bottom left corner
+        # self.size_grip_bottom_left.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        
+        # Bottom right resize grip
+        # self.size_grip_bottom_right = QSizeGrip(self)
+        # self.size_grip_bottom_right.setFixedSize(16, 16)
+        # # Use SizeFDiagCursor for bottom right corner
+        # self.size_grip_bottom_right.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        
+        # # Add both resize grips to the bottom layout, with a stretch in between to push them to corners
+        # Ommit size for addStretch() to make it take all available space
+        # bottom_layout.addWidget(self.size_grip_bottom_left)
+        # bottom_layout.addStretch()
+        # bottom_layout.addWidget(self.size_grip_bottom_right)
+        
+        container_layout.addWidget(self.title_bar)
+        container_layout.addWidget(self.editor)        
+        #container_layout.addLayout(bottom_layout)
         
     def apply_stylesheet(self):
         # A soft yellow and flat-design sticky note look
@@ -89,23 +125,55 @@ class StickyNoteWindow(QWidget):
             }
         """)
         
-    def move_and_snap(self, new_pos):
-        """Called by the title bar to move the window and snap to edges if close enough."""
-        screen = QApplication.primaryScreen().availableGeometry()
-        margin = config.SNAP_MARGIN_PX
+    def get_resize_edge(self, pos):
+        # Determine which edge or corner the mouse is near for resizing
+        # based on the 8px margin
+        margin = 8
+        on_left = pos.x() <= margin
+        on_right = pos.x() >= self.width() - margin
+        on_top = pos.y() <= margin
+        on_bottom = pos.y() >= self.height() - margin
         
-        # Snap logic, Left, Right, Top, Bottom
-        if abs(new_pos.x() - screen.left()) < margin:
-            new_pos.setX(screen.left())
-        elif abs(new_pos.x() + self.width() - screen.right()) < margin:
-            new_pos.setX(screen.right() - self.width())
+        # Corners
+        if on_left and on_top: return Qt.Edge.TopEdge | Qt.Edge.LeftEdge
+        if on_right and on_top: return Qt.Edge.TopEdge | Qt.Edge.RightEdge
+        if on_left and on_bottom: return Qt.Edge.BottomEdge | Qt.Edge.LeftEdge
+        if on_right and on_bottom: return Qt.Edge.BottomEdge | Qt.Edge.RightEdge
+        # Sides
+        if on_left: return Qt.Edge.LeftEdge
+        if on_right: return Qt.Edge.RightEdge
+        if on_top: return Qt.Edge.TopEdge
+        if on_bottom: return Qt.Edge.BottomEdge
+        
+        return None
+    
+    def mouseMoveEvent(self, event):
+        edges = self.get_resize_edge(event.pos())
+        
+        if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            self.unsetCursor()
             
-        if abs(new_pos.y() - screen.top()) < margin:
-            new_pos.setY(screen.top())
-        elif abs(new_pos.y() + self.height() - screen.bottom()) < margin:
-            new_pos.setY(screen.bottom() - self.height())
-            
-        self.move(new_pos)
+        super().mouseMoveEvent(event)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            edges = self.get_resize_edge(event.pos())
+            if edges:
+                window = self.windowHandle()
+                if window:
+                    # Hand off the dragging to KDE / Windows natively
+                    window.startSystemResize(edges)
+                event.accept()
+                return
+        super().mousePressEvent(event)
         
     # Load and auto-save methods
     def load_data(self):
@@ -114,33 +182,46 @@ class StickyNoteWindow(QWidget):
             # Pass the markdown string to the editor
             if "content" in data:
                 self.editor.setMarkdown(data["content"])
-            
             # Restore window position
             if "position" in data:
                 self.move(data["position"]["x"], data["position"]["y"])
+            # Restore window size if available
+            if "size" in data:
+                self.resize(data["size"]["width"], data["size"]["height"])
 
     def setup_autosave(self):
         # Set up a timer to auto-save the note every AUTOSAVE_DELAY_MS milliseconds
-        self.autosave_timer = QTimer(self)
+        self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         
         # Use config for the delay
         self.save_timer.setInterval(config.AUTOSAVE_DELAY_MS)
         self.save_timer.timeout.connect(self.save_data)
         
+        # Monitor the editor for changes to trigger auto-save
+        self.editor.textChanged.connect(self.trigger_autosave)
+        
     def trigger_autosave(self):
         # Restart the timer on each change
         self.save_timer.start()
+        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Trigger save on resize as well
+        self.trigger_autosave()
 
     def save_data(self):
         # The Window coordinates the UI data with the Core storage
         self.storage.save_note(
             note_id=self.note_id,
             position={"x": self.x(), "y": self.y()},
+            size={"width": self.width(), "height": self.height()},
             markdown_content=self.editor.toMarkdown()
         )
 
-    # You could trigger save_data() on a timer, or override closeEvent
+    # App close event to ensure data is saved before the window closes
     def closeEvent(self, event):
+        # Stop the timer to prevent any pending saves
+        self.save_timer.stop()
         self.save_data()
         event.accept()
