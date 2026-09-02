@@ -1,11 +1,12 @@
 {
+    "id": "default_note_1",
     "position": {
         "x": 47855,
         "y": -12582
     },
     "size": {
-        "width": 217,
-        "height": 737
+        "width": 209,
+        "height": 665
     },
-    "content": "Testar att spara en note.\n\n"
+    "content": "Testar att spara en annan note.\n\n"
 }

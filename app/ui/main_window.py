@@ -1,5 +1,5 @@
 # app/ui/main_window.py
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame
 from app.ui.components.editor import ScratchpadEditor
@@ -63,10 +63,23 @@ class StickyNoteWindow(QWidget):
         self.title_bar.close_requested.connect(self.close)
         
         self.editor = ScratchpadEditor(self)
+        self.editor.setMouseTracking(True)
+        # Ensure the viewport also tracks mouse events
+        self.editor.viewport().setMouseTracking(True)
         
         # To capture mouse events for moving the window
         self.container.installEventFilter(self)
-
+        self.editor.installEventFilter(self)
+        self.editor.viewport().installEventFilter(self)
+        self.title_bar.installEventFilter(self)
+        self.title_bar.close_btn.installEventFilter(self)
+        
+        container_layout.addWidget(self.title_bar)
+        container_layout.addWidget(self.editor)
+        
+        # Set focus to the editor for immediate typing
+        self.editor.setFocus()
+        
         # Create a horizontal layout for the bottom row to hold
         # resize handles
         # bottom_layout = QHBoxLayout()
@@ -90,8 +103,6 @@ class StickyNoteWindow(QWidget):
         # bottom_layout.addStretch()
         # bottom_layout.addWidget(self.size_grip_bottom_right)
         
-        container_layout.addWidget(self.title_bar)
-        container_layout.addWidget(self.editor)        
         #container_layout.addLayout(bottom_layout)
         
     def apply_stylesheet(self):
@@ -101,6 +112,13 @@ class StickyNoteWindow(QWidget):
                 background-color: #FFF9C4;
                 border: 1px solid #E6EE9C;
                 border-radius: 8px;
+            }
+            QWidget#TitleBar {
+                background-color: #FFF59D;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
             }
             QTextEdit {
                 background: transparent;
@@ -163,6 +181,29 @@ class StickyNoteWindow(QWidget):
             
         super().mouseMoveEvent(event)
         
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.HoverMove):
+            # Convert global mouse position to local window coordinates
+            global_pos = event.globalPosition().toPoint()
+            local_pos = self.mapFromGlobal(global_pos)
+            edges = self.get_resize_edge(local_pos)
+            
+            # Dynamically change cursor based on the edge
+            if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
+                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            else:
+                # Release control so close button and title bar can show the
+                # correct cursor
+                self.unsetCursor()
+                
+        return super().eventFilter(watched, event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             edges = self.get_resize_edge(event.pos())
@@ -174,6 +215,14 @@ class StickyNoteWindow(QWidget):
                 event.accept()
                 return
         super().mousePressEvent(event)
+        
+    def showEvent(self, event):
+        """Called automatically when the window become visible"""
+        super().showEvent(event)
+        # Wake up OS window management
+        self.activateWindow()
+        # Focus the note content text box
+        self.editor.setFocus()
         
     # Load and auto-save methods
     def load_data(self):

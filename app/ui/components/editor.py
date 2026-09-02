@@ -20,7 +20,7 @@ class ScratchpadEditor(QTextEdit):
     # Formatting methods
     def toggle_bold(self):
         fmt = self.currentCharFormat()
-        weight = QFont.Bold if fmt.fontWeight() != QFont.Bold else QFont.Normal
+        weight = QFont.Weight.Bold if fmt.fontWeight() != QFont.Weight.Bold else QFont.Weight.Normal
         fmt.setFontWeight(weight)
         self.mergeCurrentCharFormat(fmt)
 
@@ -36,5 +36,5 @@ class ScratchpadEditor(QTextEdit):
 
     def toggle_strikethrough(self):
         fmt = self.currentCharFormat()
-        fmt.setStrikeOut(not fmt.fontStrikeOut())
+        fmt.setFontStrikeOut(not fmt.fontStrikeOut())
         self.mergeCurrentCharFormat(fmt)

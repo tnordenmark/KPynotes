@@ -8,6 +8,11 @@ class CustomTitleBar(QWidget):
 
     def __init__(self, title: str = "KPynotes", parent=None):
         super().__init__(parent)
+        
+        # Assign an objectName to the TitleBar for styling purposes
+        self.setObjectName("TitleBar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
         # Enable mouse tracking
         self.setMouseTracking(True)
         # Show a move cursor when hovering over the title bar
@@ -49,15 +54,3 @@ class CustomTitleBar(QWidget):
             event.accept()
         else:
             super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            # Calculate the new intended window position
-            new_pos = event.globalPosition().toPoint() - self.drag_position
-            
-            # Pass the coordinate to the main window to handle edge-snapping
-            if hasattr(self.window(), 'move_and_snap'):
-                self.window().move_and_snap(new_pos)
-            else:
-                self.window().move(new_pos)
-            event.accept()
