@@ -1,11 +1,29 @@
-from PySide6.QtGui import QKeySequence, QShortcut, QTextCharFormat, QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut, QTextCharFormat, QFont, QCursor
 from PySide6.QtWidgets import QTextEdit
 
 class ScratchpadEditor(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        # Set explicit text editing cursors on both the widget and its interior viewport
+        self.setCursor(Qt.CursorShape.IBeamCursor)
+        self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+        
         self.setPlaceholderText("Type your notes here...")
         self.setup_shortcuts()
+        
+    def contextMenuEvent(self, event):
+        # Generate default context menu and pass local position so
+        # selection / cursor placement context works. Useful to for example
+        # format text or for future spell check
+        menu = self.createStandardContextMenu(event.pos())
+        
+        # Map local viewport position to global surface coordinates for Wayland
+        global_pos = self.viewport().mapToGlobal(event.pos())
+        
+        # Display context menu at the mapped position
+        menu.exec(global_pos)
 
     def setup_shortcuts(self):
         # Bold formatting shortcut

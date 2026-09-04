@@ -95,6 +95,9 @@ class KPynotesTrayApp:
         
         window = StickyNoteWindow(note_id=note_id)
         
+        # Connect the deletion signal to clean up memory
+        window.note_deleted.connect(self.on_note_deleted)
+        
         # Override standard close behavior to keep track in active_windows
         original_close_event = window.closeEvent
         def custom_close_event(event):
@@ -138,6 +141,13 @@ class KPynotesTrayApp:
                 self.hide_all_notes()
             else:
                 self.show_all_notes()
+                
+    def on_note_deleted(self, note_id: str):
+        """Removes the deleted note from active memory."""
+        if note_id in self.active_windows:
+            del self.active_windows[note_id]
+        # Update the tray menu to reflect the change
+        self.update_menu()
                 
     def quit_app(self):
         """Ensures all notes save their data before closing."""

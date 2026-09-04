@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 class CustomTitleBar(QWidget):
     # Signal to tell the main window to close
     close_requested = Signal()
+    delete_requested = Signal()
 
     def __init__(self, title: str = "KPynotes", parent=None):
         super().__init__(parent)
@@ -29,11 +30,19 @@ class CustomTitleBar(QWidget):
         # Title label
         self.title_label = QLabel(title)
         self.title_label.setObjectName("TitleLabel")
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
         # Allow mouse events to pass through the label to the title bar for dragging
         self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        
+        # Delete button
+        self.delete_btn = QPushButton("🗑️")
+        self.delete_btn.setObjectName("DeleteButton")
+        self.delete_btn.setFixedSize(24, 24)
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.clicked.connect(self.delete_requested.emit)
 
         # Close Button
-        self.close_btn = QPushButton("✕")
+        self.close_btn = QPushButton("✖️")
         self.close_btn.setObjectName("CloseButton")
         self.close_btn.setFixedSize(24, 24)
         # Reset cursor back to pointing hand over the close button
@@ -42,6 +51,7 @@ class CustomTitleBar(QWidget):
 
         layout.addWidget(self.title_label)
         layout.addStretch()
+        layout.addWidget(self.delete_btn)
         layout.addWidget(self.close_btn)
 
     # Dragging logic for the title bar

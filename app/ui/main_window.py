@@ -1,7 +1,7 @@
 # app/ui/main_window.py
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer, QEvent, Signal
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QMessageBox
 from app.ui.components.editor import ScratchpadEditor
 from app.ui.components.titlebar import CustomTitleBar
 from app.core.storage import LocalStorage
@@ -9,12 +9,24 @@ from app.core.storage import LocalStorage
 import app.config as config
 
 class StickyNoteWindow(QWidget):
+    # Signal to notify tray app
+    note_deleted = Signal(str)
+    
     def __init__(self, note_id: str):
         super().__init__()
         self.note_id = note_id
+        # Prevent auto-saving a deleted note
+        self.is_deleted = False
         
         # Initialize Core Storage from config
-        self.storage = LocalStorage(storage_dir=config.STORAGE_DIR) 
+        self.storage = LocalStorage(storage_dir=config.STORAGE_DIR)
+        
+        # Explicitly define the base cursor for the entire window
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        
+        # Force Qt to track mouse movement even when the window lacks focus
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setMouseTracking(True)
         
         self.setup_window_flags()
         self.init_ui()
@@ -24,11 +36,12 @@ class StickyNoteWindow(QWidget):
         self.setup_autosave()
         
     def setup_window_flags(self):
-        # Remove os borders to make the window frameless
+        # Remove OS borders to make the window frameless
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Window |
+            Qt.WindowType.FramelessWindowHint
+            # In case you want the window to always stay on top
             # Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
         )
         # Make rounded corners show properly
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -50,6 +63,7 @@ class StickyNoteWindow(QWidget):
         self.container = QFrame(self)
         self.container.setObjectName("NoteContainer")
         # Make sure container doesn't block mouse tracking
+        self.container.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self.container.setMouseTracking(True)
         main_layout.addWidget(self.container)
         
@@ -61,6 +75,7 @@ class StickyNoteWindow(QWidget):
         # Add custom title bar and editor to the container
         self.title_bar = CustomTitleBar(title="KPynotes", parent=self)
         self.title_bar.close_requested.connect(self.close)
+        self.title_bar.delete_requested.connect(self.request_delete)
         
         self.editor = ScratchpadEditor(self)
         self.editor.setMouseTracking(True)
@@ -73,6 +88,7 @@ class StickyNoteWindow(QWidget):
         self.editor.viewport().installEventFilter(self)
         self.title_bar.installEventFilter(self)
         self.title_bar.close_btn.installEventFilter(self)
+        self.title_bar.delete_btn.installEventFilter(self)
         
         container_layout.addWidget(self.title_bar)
         container_layout.addWidget(self.editor)
@@ -131,6 +147,15 @@ class StickyNoteWindow(QWidget):
                 font-weight: bold;
                 color: #555555;
             }
+            QPushButton#DeleteButton {
+                background: transparent;
+                border: none;
+                font-size: 14px;
+                }
+                QPushButton#DeleteButton:hover {
+                background-color: #FFCDD2;
+                border-radius: 4px;
+            }
             QPushButton#CloseButton {
                 background: transparent;
                 border: none;
@@ -164,43 +189,37 @@ class StickyNoteWindow(QWidget):
         if on_bottom: return Qt.Edge.BottomEdge
         
         return None
-    
-    def mouseMoveEvent(self, event):
-        edges = self.get_resize_edge(event.pos())
-        
-        if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
-        elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        else:
-            self.unsetCursor()
-            
-        super().mouseMoveEvent(event)
         
     def eventFilter(self, watched, event):
+        # Handle mouse move, hover move and leave events
+        event_type = event.type()
+        
         if event.type() in (QEvent.Type.MouseMove, QEvent.Type.HoverMove):
             # Convert global mouse position to local window coordinates
             global_pos = event.globalPosition().toPoint()
             local_pos = self.mapFromGlobal(global_pos)
+            
             edges = self.get_resize_edge(local_pos)
             
-            # Dynamically change cursor based on the edge
-            if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
-                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-            elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
-                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-            elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
-                self.setCursor(Qt.CursorShape.SizeHorCursor)
-            elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
-                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            if edges is not None:
+                # Dynamically change cursor based on the edge
+                if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+                elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+                    self.setCursor(Qt.CursorShape.SizeVerCursor)
             else:
-                # Release control so close button and title bar can show the
-                # correct cursor
+                # Inside the note interior (not on an edge): 
+                # Release window-level override so child widgets (Editor, Buttons, Titlebar) 
+                # display their own configured cursors
                 self.unsetCursor()
+                
+        # Reset cursor if the mouse leaves the window
+        elif event_type in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
+            self.unsetCursor()
                 
         return super().eventFilter(watched, event)
 
@@ -219,10 +238,13 @@ class StickyNoteWindow(QWidget):
     def showEvent(self, event):
         """Called automatically when the window become visible"""
         super().showEvent(event)
+        # Bring the window to the front
+        self.raise_()
         # Wake up OS window management
         self.activateWindow()
         # Focus the note content text box
-        self.editor.setFocus()
+        if hasattr(self, 'editor'):
+            self.editor.setFocus()
         
     # Load and auto-save methods
     def load_data(self):
@@ -267,10 +289,32 @@ class StickyNoteWindow(QWidget):
             size={"width": self.width(), "height": self.height()},
             markdown_content=self.editor.toMarkdown()
         )
+        
+    def request_delete(self):
+        # Show confirmation dialog before deleting
+        reply = QMessageBox.question(
+            self,
+            "Delete Note",
+            "Are you sure you want to delete this note?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Flag to bypass save in closeEvent
+            self.is_deleted = True
+            self.storage.delete_note(self.note_id)
+            # Tell main.py to remove note from memory
+            self.note_deleted.emit(self.note_id)
+            self.close()
 
     # App close event to ensure data is saved before the window closes
     def closeEvent(self, event):
         # Stop the timer to prevent any pending saves
         self.save_timer.stop()
-        self.save_data()
+        
+        # Only save if NOT deleting
+        if not self.is_deleted:
+            self.save_data()
+        
         event.accept()
