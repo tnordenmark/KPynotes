@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut, QTextCharFormat, QFont, QCursor
+from PySide6.QtGui import QKeySequence, QShortcut, QFont
 from PySide6.QtWidgets import QTextEdit
 
 class ScratchpadEditor(QTextEdit):
@@ -18,6 +18,25 @@ class ScratchpadEditor(QTextEdit):
         # selection / cursor placement context works. Useful to for example
         # format text or for future spell check
         menu = self.createStandardContextMenu(event.pos())
+        
+        # Append formatting options below a separator
+        menu.addSeparator()
+        
+        bold_action = menu.addAction("Bold")
+        bold_action.setShortcut(QKeySequence("Ctrl+B"))
+        bold_action.triggered.connect(self.toggle_bold)
+        
+        italic_action = menu.addAction("Italic")
+        italic_action.setShortcut(QKeySequence("Ctrl+I"))
+        italic_action.triggered.connect(self.toggle_italic)
+        
+        underline_action = menu.addAction("Underline")
+        underline_action.setShortcut(QKeySequence("Ctrl+U"))
+        underline_action.triggered.connect(self.toggle_underline)
+        
+        strikethrough_action = menu.addAction("Strikethrough")
+        strikethrough_action.setShortcut(QKeySequence("Ctrl+T"))
+        strikethrough_action.triggered.connect(self.toggle_strikethrough)
         
         # Map local viewport position to global surface coordinates for Wayland
         global_pos = self.viewport().mapToGlobal(event.pos())

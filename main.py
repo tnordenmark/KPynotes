@@ -102,10 +102,10 @@ class KPynotesTrayApp:
         original_close_event = window.closeEvent
         def custom_close_event(event):
             original_close_event(event)
-            # Retain window reference in self.active_windows to allow reopening
             
         window.closeEvent = custom_close_event
         
+        # Retain window reference in self.active_windows to allow reopening        
         self.active_windows[note_id] = window
         window.show()
         

@@ -30,7 +30,12 @@ class StickyNoteWindow(QWidget):
         
         self.setup_window_flags()
         self.init_ui()
+        
+        # Call apply_stylesheet directly to detect system theme
         self.apply_stylesheet()
+        
+        # Liten for OS theme changed and re-apply stylesheet dynamically
+        QApplication.styleHints().colorSchemeChanged.connect(self.apply_stylesheet)
         
         self.load_data()
         self.setup_autosave()
@@ -70,12 +75,16 @@ class StickyNoteWindow(QWidget):
         # Vertical container layout
         container_layout = QVBoxLayout(self.container)
         # Set margins to use as resize border
-        container_layout.setContentsMargins(8, 8, 8, 8)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        # Remove spacing so the editor conects seamlessly to the bottom of
+        # the title bar
+        container_layout.setSpacing(0)
         
         # Add custom title bar and editor to the container
         self.title_bar = CustomTitleBar(title="KPynotes", parent=self)
         self.title_bar.close_requested.connect(self.close)
         self.title_bar.delete_requested.connect(self.request_delete)
+        self.title_bar.setContentsMargins(8, 4, 8, 4)
         
         self.editor = ScratchpadEditor(self)
         self.editor.setMouseTracking(True)
@@ -96,76 +105,81 @@ class StickyNoteWindow(QWidget):
         # Set focus to the editor for immediate typing
         self.editor.setFocus()
         
-        # Create a horizontal layout for the bottom row to hold
-        # resize handles
-        # bottom_layout = QHBoxLayout()
-        # bottom_layout.setContentsMargins(0, 0, 0, 0)
+    def apply_stylesheet(self, scheme=None):
+        # If not passed by the signal, fetch the current color scheme natively
+        if scheme is None:
+            scheme = QApplication.styleHints().colorScheme()
+            
+        is_dark = (scheme == Qt.ColorScheme.Dark)
         
-        # Bottom left resize grip
-        # self.size_grip_bottom_left = QSizeGrip(self)
-        # self.size_grip_bottom_left.setFixedSize(16, 16)
-        # # Use SizeBDiagCursor for bottom left corner
-        # self.size_grip_bottom_left.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        # Define color palettes
+        if is_dark:
+            # Dark Mode Palette (Sleek Dark Gray/Charcoal)
+            bg_color = "#2D2D2D"
+            title_bg = "#1E1E1E"
+            border_color = "#3D3D3D"
+            text_color = "#E0E0E0"
+            title_text = "#B0B0B0"
+            btn_hover_bg = "#4A4A4A"
+            close_hover_text = "#FF5252"
+        else:
+            # Light Mode Palette (Original Soft Yellow)
+            bg_color = "#FFF9C4"
+            title_bg = "#FFF59D"
+            border_color = "#E6EE9C"
+            text_color = "#333333"
+            title_text = "#555555"
+            btn_hover_bg = "#FFCDD2"
+            close_hover_text = "#FF1744"
         
-        # Bottom right resize grip
-        # self.size_grip_bottom_right = QSizeGrip(self)
-        # self.size_grip_bottom_right.setFixedSize(16, 16)
-        # # Use SizeFDiagCursor for bottom right corner
-        # self.size_grip_bottom_right.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        
-        # # Add both resize grips to the bottom layout, with a stretch in between to push them to corners
-        # Ommit size for addStretch() to make it take all available space
-        # bottom_layout.addWidget(self.size_grip_bottom_left)
-        # bottom_layout.addStretch()
-        # bottom_layout.addWidget(self.size_grip_bottom_right)
-        
-        #container_layout.addLayout(bottom_layout)
-        
-    def apply_stylesheet(self):
         # A soft yellow and flat-design sticky note look
-        self.setStyleSheet("""
-            QFrame#NoteContainer {
-                background-color: #FFF9C4;
-                border: 1px solid #E6EE9C;
+        self.setStyleSheet(f"""
+            QFrame#NoteContainer {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
                 border-radius: 8px;
-            }
-            QWidget#TitleBar {
-                background-color: #FFF59D;
+            }}
+            QWidget#TitleBar {{
+                background-color: {title_bg};
+                /* Subtract 1px from the container's 8px radius to account for the border width */
                 border-top-left-radius: 7px;
                 border-top-right-radius: 7px;
                 border-bottom-left-radius: 0px;
                 border-bottom-right-radius: 0px;
-            }
-            QTextEdit {
+                /* Add a subtle bottom border to separate the title bar from the editor */
+                border-bottom: 1px solid {border_color};
+            }}
+            QTextEdit {{
                 background: transparent;
                 border: none;
+                padding: 4px;
                 font-family: 'Segoe UI', 'Noto Sans', sans-serif;
                 font-size: 14px;
-                color: #333333;
-            }
-            QLabel#TitleLabel {
+                color: {text_color};
+            }}
+            QLabel#TitleLabel {{
                 font-weight: bold;
-                color: #555555;
-            }
-            QPushButton#DeleteButton {
+                color: {title_text};
+            }}
+            QPushButton#DeleteButton {{
                 background: transparent;
                 border: none;
                 font-size: 14px;
-                }
-                QPushButton#DeleteButton:hover {
-                background-color: #FFCDD2;
+                }}
+            QPushButton#DeleteButton:hover {{
+                background-color: {btn_hover_bg};
                 border-radius: 4px;
-            }
-            QPushButton#CloseButton {
+            }}
+            QPushButton#CloseButton {{
                 background: transparent;
                 border: none;
                 font-weight: bold;
-                color: #999999;
+                color: {close_hover_text};
                 font-size: 14px;
-            }
-            QPushButton#CloseButton:hover {
+            }}
+            QPushButton#CloseButton:hover {{
                 color: #FF1744;
-            }
+            }}
         """)
         
     def get_resize_edge(self, pos):
@@ -191,35 +205,59 @@ class StickyNoteWindow(QWidget):
         return None
         
     def eventFilter(self, watched, event):
-        # Handle mouse move, hover move and leave events
         event_type = event.type()
         
-        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.HoverMove):
-            # Convert global mouse position to local window coordinates
-            global_pos = event.globalPosition().toPoint()
-            local_pos = self.mapFromGlobal(global_pos)
+        # Only process specific mouse events to reduce overhead
+        if event_type in (QEvent.Type.MouseMove, QEvent.Type.HoverMove, QEvent.Type.MouseButtonPress):
             
+            # Extract global position safely from the event
+            if hasattr(event, 'globalPosition'):
+                global_pos = event.globalPosition().toPoint()
+            else:
+                return super().eventFilter(watched, event)
+                
+            local_pos = self.mapFromGlobal(global_pos)
             edges = self.get_resize_edge(local_pos)
             
-            if edges is not None:
-                # Dynamically change cursor based on the edge
-                if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
-                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
-                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-                elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
-                    self.setCursor(Qt.CursorShape.SizeHorCursor)
-                elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
-                    self.setCursor(Qt.CursorShape.SizeVerCursor)
-            else:
-                # Inside the note interior (not on an edge): 
-                # Release window-level override so child widgets (Editor, Buttons, Titlebar) 
-                # display their own configured cursors
-                self.unsetCursor()
-                
-        # Reset cursor if the mouse leaves the window
+            # Handle hover & cursor changes
+            if event_type in (QEvent.Type.MouseMove, QEvent.Type.HoverMove):
+                if edges:
+                    # Apply cursor directly to the widget currently being hovered (overriding child cursors)
+                    if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+                        watched.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                    elif edges in (Qt.Edge.BottomEdge | Qt.Edge.LeftEdge, Qt.Edge.TopEdge | Qt.Edge.RightEdge):
+                        watched.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                    elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+                        watched.setCursor(Qt.CursorShape.SizeHorCursor)
+                    elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+                        watched.setCursor(Qt.CursorShape.SizeVerCursor)
+                        
+                    # Stop propagation so the text editor doesn't override the cursor
+                    return True 
+                else:
+                    # Restore normal cursors based on widget type
+                    if watched == getattr(self, 'editor', None) or watched == getattr(self.editor, 'viewport', lambda: None)():
+                        watched.setCursor(Qt.CursorShape.IBeamCursor)
+                    else:
+                        watched.unsetCursor()
+                        
+            # Handle mouse click & drag
+            elif event_type == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                if edges:
+                    # Acknowledge the press natively for the OS
+                    event.accept()
+                    window = self.windowHandle()
+                    if window:
+                        window.startSystemResize(edges)
+                    # Block child widgets from starting text selection during resize
+                    return True
+                    
+        # Handle mouse leaving the window
         elif event_type in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
-            self.unsetCursor()
+            if watched == getattr(self, 'editor', None) or watched == getattr(self.editor, 'viewport', lambda: None)():
+                watched.setCursor(Qt.CursorShape.IBeamCursor)
+            else:
+                watched.unsetCursor()
                 
         return super().eventFilter(watched, event)
 
