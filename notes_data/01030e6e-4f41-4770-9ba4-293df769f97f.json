@@ -1,12 +1,5 @@
 {
     "id": "01030e6e-4f41-4770-9ba4-293df769f97f",
-    "position": {
-        "x": 0,
-        "y": 1080
-    },
-    "size": {
-        "width": 299,
-        "height": 350
-    },
-    "content": "\u2596\u2596\u2584\u2596\u2584     \u2584\u2596\u2584\u2596\u2596\u2596\n\n\u2599\u2598\u258c\u258c\u258c\u258c  \u258c\u258c\u259a   \u258c\u258c\n\n\u258c\u258c\u2599\u258c\u2599\u2598  \u2599\u258c\u2584\u258c\u259a\u2598\n\n              \n\n"
+    "geometry": "AdnQywADAAAAAAAAAAAAAAAAAWYAAACVAAAAAAAAAAAAAAFmAAAAlQAAAAEAAAAAB4AAAAAAAAAAAAAAAWYAAACV",
+    "content": "\u2596\u2596\u2584\u2596\u2584     \u2584\u2596\u2584\u2596\u2596\u2596\n\n\u2599\u2598\u258c\u258c\u258c\u258c  \u258c\u258c\u259a   \u258c\u258c\n\n\u258c\u258c\u2599\u258c\u2599\u2598  \u2599\u258c\u2584\u258c\u259a\u2598\n\n"
 }

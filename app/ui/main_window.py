@@ -1,5 +1,5 @@
 # app/ui/main_window.py
-from PySide6.QtCore import Qt, QTimer, QEvent, Signal
+from PySide6.QtCore import Qt, QTimer, QEvent, Signal, QByteArray
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QMessageBox
 from app.ui.components.editor import ScratchpadEditor
@@ -41,6 +41,10 @@ class StickyNoteWindow(QWidget):
         self.setup_autosave()
         
     def setup_window_flags(self):
+        # Unique identifiers for window rules etc
+        self.setWindowTitle(f"KPynotes - {self.note_id}")
+        self.setObjectName(f"StickyNote_{self.note_id}")
+        
         # Remove OS borders to make the window frameless
         self.setWindowFlags(
             Qt.WindowType.Window |
@@ -54,7 +58,6 @@ class StickyNoteWindow(QWidget):
         self.resize(300, 350)
         # Enforce minimum size to prevent shrinking it out of existence
         self.setMinimumSize(150, 150)
-        
         # Allow window to track mouse without clicking
         self.setMouseTracking(True)
 
@@ -291,13 +294,12 @@ class StickyNoteWindow(QWidget):
             # Pass the markdown string to the editor
             if "content" in data:
                 self.editor.setMarkdown(data["content"])
-            # Restore window position
-            if "position" in data:
-                self.move(data["position"]["x"], data["position"]["y"])
-            # Restore window size if available
-            if "size" in data:
-                self.resize(data["size"]["width"], data["size"]["height"])
-
+            
+            # Restore monitor, position and size seamlessly
+            if "geometry" in data:
+                geometry_bytes = QByteArray.fromBase64(data["geometry"].encode('utf-8'))
+                self.restoreGeometry(geometry_bytes)
+            
     def setup_autosave(self):
         # Set up a timer to auto-save the note every AUTOSAVE_DELAY_MS milliseconds
         self.save_timer = QTimer(self)
@@ -320,11 +322,13 @@ class StickyNoteWindow(QWidget):
         self.trigger_autosave()
 
     def save_data(self):
+        # saveGeometry() packs position, size and screen index to a hex string
+        geometry_b64 = self.saveGeometry().toBase64().data().decode('utf-8')
+        
         # The Window coordinates the UI data with the Core storage
         self.storage.save_note(
             note_id=self.note_id,
-            position={"x": self.x(), "y": self.y()},
-            size={"width": self.width(), "height": self.height()},
+            geometry=geometry_b64,
             markdown_content=self.editor.toMarkdown()
         )
         

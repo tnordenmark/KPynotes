@@ -43,15 +43,12 @@ class ScratchpadEditor(QTextEdit):
         
         # Display context menu at the mapped position
         menu.exec(global_pos)
-
+        
+    # Formatting keyboard shortcuts
     def setup_shortcuts(self):
-        # Bold formatting shortcut
         QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(self.toggle_bold)
-        # Italic formatting shortcut
         QShortcut(QKeySequence("Ctrl+I"), self).activated.connect(self.toggle_italic)
-        # Underline formatting shortcut
         QShortcut(QKeySequence("Ctrl+U"), self).activated.connect(self.toggle_underline)
-        # Strikethrough formatting shortcut
         QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(self.toggle_strikethrough)
         
     # Formatting methods

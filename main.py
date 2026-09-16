@@ -1,8 +1,8 @@
 # main.py
 import sys
 import uuid
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QAction
+from PySide6.QtCore import Qt, QCoreApplication
+from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QAction, QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from app.ui.main_window import StickyNoteWindow
@@ -157,8 +157,20 @@ class KPynotesTrayApp:
         self.app.quit()        
     
 if __name__ == "__main__":
+    # Windows taskbar group fix
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('com.kpynotes.app.1.0')
+        
     app = QApplication(sys.argv)
     
-    # In the future, note_manager.py will dictate how many windows spawn here
+    # Application metadata
+    QCoreApplication.setApplicationName("kpynotes")
+    QCoreApplication.setOrganizationName("kpynotesOrg")
+    QGuiApplication.setApplicationDisplayName("KPynotes")
+    
+    # For KDE Plasma Wayland window rules mapping
+    QGuiApplication.setDesktopFileName("io.github.tnordenmark.KPynotes")
+    
     tray_app = KPynotesTrayApp(app)
     sys.exit(app.exec())
