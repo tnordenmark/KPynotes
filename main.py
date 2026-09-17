@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from app.ui.main_window import StickyNoteWindow
 from app.core.storage import LocalStorage
+from app.ui.settings_window import SettingsDialog
 import app.config as config
 
 def create_fallback_icon() -> QIcon:
@@ -72,6 +73,13 @@ class KPynotesTrayApp:
         hide_all_action = QAction("🙈 Hide All Notes", self.menu)
         hide_all_action.triggered.connect(self.hide_all_notes)
         self.menu.addAction(hide_all_action)
+        
+        self.menu.addSeparator()
+        
+        # Action: Settings
+        settings_action = QAction("⚙️ Settings", self.menu)
+        settings_action.triggered.connect(self.open_settings)
+        self.menu.addAction(settings_action)
         
         self.menu.addSeparator()
         
@@ -148,6 +156,14 @@ class KPynotesTrayApp:
             del self.active_windows[note_id]
         # Update the tray menu to reflect the change
         self.update_menu()
+        
+    def open_settings(self):
+        dialog = SettingsDialog()
+        if dialog.exec():
+            # Triggered if the user clicked Save (self.accept())
+            # Future iteration through self.active_windiws to instanly
+            # re-apply stylesheet or update storage directory references
+            pass
                 
     def quit_app(self):
         """Ensures all notes save their data before closing."""
@@ -166,7 +182,7 @@ if __name__ == "__main__":
     
     # Application metadata
     QCoreApplication.setApplicationName("kpynotes")
-    QCoreApplication.setOrganizationName("kpynotesOrg")
+    QCoreApplication.setOrganizationName("kpynotes")
     QGuiApplication.setApplicationDisplayName("KPynotes")
     
     # For KDE Plasma Wayland window rules mapping

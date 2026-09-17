@@ -16,8 +16,11 @@ class AppSettings:
     def set_storage_path(self, path: str):
         self.settings.setValue("storage_path", path)
         
+    def get_theme_override(self) -> str:
+        return str(self.settings.value("theme_override", "system", type=str))
+        
     def set_theme_override(self, theme: str) -> None:
-        self.settings.setValue("theme_override", "system")
+        self.settings.setValue("theme_override", theme)
         
     def get_always_on_top(self) -> bool:
         return bool(self.settings.value("always_on_top", False, type=bool))
@@ -42,15 +45,24 @@ class AppSettings:
             run_key = r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run"
             reg_settings = QSettings(run_key, QSettings.Format.NativeFormat)
             if enable:
-                reg_settings.setValues("kpynotes", exec_path)
+                reg_settings.setValue("kpynotes", exec_path)
             else:
                 reg_settings.remove("kpynotes")
                 
         elif sys.platform.startswith('linux'):
-            autostart_dir = os.path.expanduser("~/.confg/autostart")
+            autostart_dir = os.path.expanduser("~/.config/autostart")
             desktop_file = os.path.join(autostart_dir, "kpynotes.desktop")
             
             if enable:
                 os.makedirs(autostart_dir, exist_ok=True)
-    
-    
+                with open(desktop_file, "w", encoding="utf-8") as f:
+                    f.write(f"[Desktop Entry]\n"
+                            f"Type=Application\n"
+                            f"Name=KPynotes\n"
+                            f"Exec={exec_path}\n"
+                            f"Hidden=false\n"
+                            f"NoDisplay=false\n"
+                            f"X-GNOME-Autostart-enabled=true\n")
+            else:
+                if os.path.exists(desktop_file):
+                    os.remove(desktop_file)
