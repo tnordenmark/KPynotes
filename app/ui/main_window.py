@@ -4,7 +4,9 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QMessageBox
 from app.ui.components.editor import ScratchpadEditor
 from app.ui.components.titlebar import CustomTitleBar
+from app.ui.styles import get_note_stylesheet
 from app.core.storage import LocalStorage
+from app.core.settings import AppSettings
 # Import config for save trigger timer delay and other settings
 import app.config as config
 
@@ -18,8 +20,13 @@ class StickyNoteWindow(QWidget):
         # Prevent auto-saving a deleted note
         self.is_deleted = False
         
+        # Initialize settings
+        self.app_settings = AppSettings()
+        
+        # Use the dynamic storage path instead of config.STORAGE_DIR
+        self.storage = LocalStorage(storage_dir=self.app_settings.get_storage_path())
         # Initialize Core Storage from config
-        self.storage = LocalStorage(storage_dir=config.STORAGE_DIR)
+        # self.storage = LocalStorage(storage_dir=config.STORAGE_DIR)
         
         # Explicitly define the base cursor for the entire window
         self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -46,12 +53,16 @@ class StickyNoteWindow(QWidget):
         self.setObjectName(f"StickyNote_{self.note_id}")
         
         # Remove OS borders to make the window frameless
-        self.setWindowFlags(
-            Qt.WindowType.Window |
-            Qt.WindowType.FramelessWindowHint
-            # In case you want the window to always stay on top
-            # Qt.WindowType.WindowStaysOnTopHint |
-        )
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        
+        # If get_always_on_top returns True, append the Always on Top
+        # window flag dynamically
+        if self.app_settings.get_always_on_top():
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        
+        # Apply combined window flags
+        self.setWindowFlags(flags)
+        
         # Make rounded corners show properly
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # Default size, can be adjusted later
@@ -109,81 +120,73 @@ class StickyNoteWindow(QWidget):
         self.editor.setFocus()
         
     def apply_stylesheet(self, scheme=None):
-        # If not passed by the signal, fetch the current color scheme natively
-        if scheme is None:
-            scheme = QApplication.styleHints().colorScheme()
-            
-        is_dark = (scheme == Qt.ColorScheme.Dark)
+        # Respect the Theme Override setting
+        theme_override = self.app_settings.get_theme_override()
         
-        # Define color palettes
-        if is_dark:
-            # Dark Mode Palette (Sleek Dark Gray/Charcoal)
-            bg_color = "#2D2D2D"
-            title_bg = "#1E1E1E"
-            border_color = "#3D3D3D"
-            text_color = "#E0E0E0"
-            title_text = "#B0B0B0"
-            btn_hover_bg = "#4A4A4A"
-            close_hover_text = "#FF5252"
+        if theme_override == "light":
+            is_dark = False
+        elif theme_override == "dark":
+            is_dark = True
         else:
-            # Light Mode Palette (Original Soft Yellow)
-            bg_color = "#FFF9C4"
-            title_bg = "#FFF59D"
-            border_color = "#E6EE9C"
-            text_color = "#333333"
-            title_text = "#555555"
-            btn_hover_bg = "#FFCDD2"
-            close_hover_text = "#FF1744"
+            # Fallback to follow system colors
+            if scheme is None:
+                scheme = QApplication.styleHints().colorScheme()
+            is_dark = (scheme == Qt.ColorScheme.Dark)
+            
+        self.setStyleSheet(get_note_stylesheet(is_dark))
         
-        # A soft yellow and flat-design sticky note look
-        self.setStyleSheet(f"""
-            QFrame#NoteContainer {{
-                background-color: {bg_color};
-                border: 1px solid {border_color};
-                border-radius: 8px;
-            }}
-            QWidget#TitleBar {{
-                background-color: {title_bg};
-                /* Subtract 1px from the container's 8px radius to account for the border width */
-                border-top-left-radius: 7px;
-                border-top-right-radius: 7px;
-                border-bottom-left-radius: 0px;
-                border-bottom-right-radius: 0px;
-                /* Add a subtle bottom border to separate the title bar from the editor */
-                border-bottom: 1px solid {border_color};
-            }}
-            QTextEdit {{
-                background: transparent;
-                border: none;
-                padding: 4px;
-                font-family: 'Segoe UI', 'Noto Sans', sans-serif;
-                font-size: 14px;
-                color: {text_color};
-            }}
-            QLabel#TitleLabel {{
-                font-weight: bold;
-                color: {title_text};
-            }}
-            QPushButton#DeleteButton {{
-                background: transparent;
-                border: none;
-                font-size: 14px;
-                }}
-            QPushButton#DeleteButton:hover {{
-                background-color: {btn_hover_bg};
-                border-radius: 4px;
-            }}
-            QPushButton#CloseButton {{
-                background: transparent;
-                border: none;
-                font-weight: bold;
-                color: {close_hover_text};
-                font-size: 14px;
-            }}
-            QPushButton#CloseButton:hover {{
-                color: #FF1744;
-            }}
-        """)
+    def apply_live_settings(self):
+        """Called by the system tray when settings are modified."""
+        # Refresh settings cache
+        self.app_settings = AppSettings()
+        
+        # Update storage path
+        new_storage_path = self.app_settings.get_storage_path()
+        if self.storage.storage_dir != new_storage_path:
+            self.storage = LocalStorage(storage_dir=new_storage_path)
+            # Force a save to ensure the note exists in the new directory
+            self.save_data()
+            
+        # Update theme
+        self.apply_stylesheet()
+        
+        # Update Always on top window flag
+        should_be_on_top = self.app_settings.get_always_on_top()
+        
+        # Check if the flag is currently applied using bitwise AND
+        is_on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        
+        if should_be_on_top != is_on_top:
+            # Changing flags destroys and recreates the native window
+            # Save geometry so the OS window manager doesn't reposition it
+            current_geometry = self.saveGeometry()
+            
+            # setWindowFlag toggles only this specific hint, leaving base flags intact
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, should_be_on_top)
+            
+            # Re-render the window
+            self.show()
+            
+            # Snap window back to the exact previous coordinates and size
+            self.restoreGeometry(current_geometry)
+            
+            # Force the OS to acknowledge the new stacking order immediatley
+            if should_be_on_top:
+                self.raise_()
+            
+        # current_flags = self.windowFlags()
+        # base_flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        
+        # if self.app_settings.get_always_on_top():
+        #     new_flags = base_flags | Qt.WindowType.WindowStaysOnTopHint
+        # else:
+        #     new_flags = base_flags
+            
+        # if current_flags != new_flags:
+        #     self.setWindowFlags(new_flags)
+        #     # CHanging window flags hides the window in Qt,
+        #     # explicitly call show to re-render it
+        #     self.show()
         
     def get_resize_edge(self, pos):
         # Determine which edge or corner the mouse is near for resizing
@@ -286,19 +289,34 @@ class StickyNoteWindow(QWidget):
         # Focus the note content text box
         if hasattr(self, 'editor'):
             self.editor.setFocus()
-        
+    
+    def save_data(self):
+            # saveGeometry() packs position, size and screen index to a hex string
+            geometry_hex = bytes(self.saveGeometry().toHex()).decode('ascii')
+            
+            # The Window coordinates the UI data with the Core storage
+            self.storage.save_note(
+                note_id=self.note_id,
+                geometry=geometry_hex,
+                markdown_content=self.editor.toMarkdown()
+            )
+                
     # Load and auto-save methods
     def load_data(self):
         data = self.storage.load_note(self.note_id)
-        if data:
-            # Pass the markdown string to the editor
-            if "content" in data:
-                self.editor.setMarkdown(data["content"])
+        if not data:
+            return
+        
+        # Check for the preferred markdown content or legacy content
+        content = data.get("markdown_content") or data.get("content")
+        if content:
+            self.editor.setMarkdown(content)
             
-            # Restore monitor, position and size seamlessly
-            if "geometry" in data:
-                geometry_bytes = QByteArray.fromBase64(data["geometry"].encode('utf-8'))
-                self.restoreGeometry(geometry_bytes)
+        # Restore monitor, position and size seamlessly
+        if "geometry" in data:
+            # Convert the stored hex string back to a QByteArray
+            geometry_bytes = QByteArray.fromHex(data["geometry"].encode('ascii'))
+            self.restoreGeometry(geometry_bytes)
             
     def setup_autosave(self):
         # Set up a timer to auto-save the note every AUTOSAVE_DELAY_MS milliseconds
@@ -321,17 +339,6 @@ class StickyNoteWindow(QWidget):
         # Trigger save on resize as well
         self.trigger_autosave()
 
-    def save_data(self):
-        # saveGeometry() packs position, size and screen index to a hex string
-        geometry_b64 = self.saveGeometry().toBase64().data().decode('utf-8')
-        
-        # The Window coordinates the UI data with the Core storage
-        self.storage.save_note(
-            note_id=self.note_id,
-            geometry=geometry_b64,
-            markdown_content=self.editor.toMarkdown()
-        )
-        
     def request_delete(self):
         # Show confirmation dialog before deleting
         reply = QMessageBox.question(

@@ -84,7 +84,7 @@ class KPynotesTrayApp:
         self.menu.addSeparator()
         
         # Action: Quit App
-        quit_action = QAction("❌ Quit KPynotes", self.menu)
+        quit_action = QAction("❌ Quit", self.menu)
         quit_action.triggered.connect(self.app.quit)
         self.menu.addAction(quit_action)
 
@@ -163,7 +163,8 @@ class KPynotesTrayApp:
             # Triggered if the user clicked Save (self.accept())
             # Future iteration through self.active_windiws to instanly
             # re-apply stylesheet or update storage directory references
-            pass
+            for window in self.active_windows.values():
+                window.apply_live_settings()
                 
     def quit_app(self):
         """Ensures all notes save their data before closing."""

@@ -68,7 +68,7 @@ class SettingsDialog(QDialog):
         if theme == "dark":
             self.theme_combo.setCurrentIndex(2)
         else:
-            self.theme_combo.setCurrentIndex(3)
+            self.theme_combo.setCurrentIndex(0)
     
     def browse_storage_path(self):
         directory = QFileDialog.getExistingDirectory(
