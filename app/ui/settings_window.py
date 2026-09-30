@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
                                QPushButton, QHBoxLayout, QCheckBox, QComboBox,
-                               QDialogButtonBox, QFileDialog, QWidget)
+                               QDialogButtonBox, QFileDialog)
 from app.core.settings import AppSettings
 
 class SettingsDialog(QDialog):
@@ -40,8 +40,9 @@ class SettingsDialog(QDialog):
         form_layout.addRow("Appearance:", self.theme_combo)
         
         # Behavior checks
-        self.on_top_check = QCheckBox("Keep new notes always on top")
-        form_layout.addRow("", self.on_top_check)
+        # Eventual future always on top, not used for now
+        # self.on_top_check = QCheckBox("Keep new notes always on top")
+        # form_layout.addRow("", self.on_top_check)
         
         self.autostart_check = QCheckBox("Launch KPynotes at system startup")
         form_layout.addRow("", self.autostart_check)
@@ -59,7 +60,8 @@ class SettingsDialog(QDialog):
         
     def load_current_settings(self):
         self.path_input.setText(self.app_settings.get_storage_path())
-        self.on_top_check.setChecked(self.app_settings.get_always_on_top())
+        # Eventual future always on top, not used for now
+        # self.on_top_check.setChecked(self.app_settings.get_always_on_top())
         self.autostart_check.setChecked(self.app_settings.get_autostart())
         
         theme = self.app_settings.get_theme_override()
@@ -80,7 +82,8 @@ class SettingsDialog(QDialog):
     def save_settings(self):
         # Commit UI values back to QSettings
         self.app_settings.set_storage_path(self.path_input.text())
-        self.app_settings.set_always_on_top(self.on_top_check.isChecked())
+        # Eventual future always on top, not used for now
+        # self.app_settings.set_always_on_top(self.on_top_check.isChecked())
         self.app_settings.set_autostart(self.autostart_check.isChecked())
         
         theme_idx = self.theme_combo.currentIndex()

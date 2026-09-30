@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from app.ui.main_window import StickyNoteWindow
 from app.core.storage import LocalStorage
 from app.ui.settings_window import SettingsDialog
+from app.core.settings import AppSettings
 import app.config as config
 
 def create_fallback_icon() -> QIcon:
@@ -29,7 +30,12 @@ def create_fallback_icon() -> QIcon:
 class KPynotesTrayApp:
     def __init__(self, app: QApplication):
         self.app = app
-        self.storage = LocalStorage(storage_dir=config.STORAGE_DIR)
+        self.app_settings = AppSettings()
+        
+        # Retrieve dynamic storage path from settings
+        storage_path = self.app_settings.get_storage_path()
+        self.storage = LocalStorage(storage_dir=storage_path)
+        
         # Dictionary to keep track of open sticky note windows
         self.active_windows: dict[str, StickyNoteWindow] = {}
         

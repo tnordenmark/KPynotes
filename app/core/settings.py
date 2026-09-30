@@ -22,11 +22,11 @@ class AppSettings:
     def set_theme_override(self, theme: str) -> None:
         self.settings.setValue("theme_override", theme)
         
-    def get_always_on_top(self) -> bool:
-        return bool(self.settings.value("always_on_top", False, type=bool))
+    # def get_always_on_top(self) -> bool:
+    #     return bool(self.settings.value("always_on_top", False, type=bool))
     
-    def set_always_on_top(self, enabled: bool):
-        self.settings.setValue("always_on_top", enabled)
+    # def set_always_on_top(self, enabled: bool):
+    #     self.settings.setValue("always_on_top", enabled)
         
     def get_autostart(self) -> bool:
         return bool(self.settings.value("autostart", False, type=bool))

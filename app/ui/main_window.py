@@ -55,12 +55,17 @@ class StickyNoteWindow(QWidget):
         self.setObjectName(f"StickyNote_{self.note_id}")
 
         # Remove OS borders to make the window frameless
-        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        flags = (
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.CustomizeWindowHint
+        )
 
         # If get_always_on_top returns True, append the Always on Top
         # window flag dynamically
-        if self.app_settings.get_always_on_top():
-            flags |= Qt.WindowType.WindowStaysOnTopHint
+        # Eventual future always on top, not used for now
+        # if self.app_settings.get_always_on_top():
+        #     flags |= Qt.WindowType.WindowStaysOnTopHint
 
         # Apply combined window flags
         self.setWindowFlags(flags)
@@ -153,42 +158,41 @@ class StickyNoteWindow(QWidget):
         self.apply_stylesheet()
 
         # Update Always on top window flag
-        should_be_on_top = self.app_settings.get_always_on_top()
+        # Eventual future always on top, not used for now
+        # should_be_on_top = self.app_settings.get_always_on_top()
 
         # Check if the flag is currently applied using bitwise AND
-        is_on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        # is_on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
 
-        if should_be_on_top != is_on_top:
+        # if should_be_on_top != is_on_top:
             # Changing flags destroys and recreates the native window
             # Save geometry so the OS window manager doesn't reposition it
-            current_geometry = self.saveGeometry()
-
-            # setWindowFlag toggles only this specific hint, leaving base flags intact
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, should_be_on_top)
-
-            # Re-render the window
-            self.show()
-
-            # Snap window back to the exact previous coordinates and size
-            self.restoreGeometry(current_geometry)
-
-            # Force the OS to acknowledge the new stacking order immediatley
-            if should_be_on_top:
-                self.raise_()
-
-        # current_flags = self.windowFlags()
-        # base_flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
-
-        # if self.app_settings.get_always_on_top():
-        #     new_flags = base_flags | Qt.WindowType.WindowStaysOnTopHint
-        # else:
-        #     new_flags = base_flags
-
-        # if current_flags != new_flags:
-        #     self.setWindowFlags(new_flags)
-        #     # CHanging window flags hides the window in Qt,
-        #     # explicitly call show to re-render it
-        #     self.show()
+            # current_geometry = self.saveGeometry()
+            
+            # Explicitly hide the window before changing hints
+            # self.hide()
+            
+            # # Define all base flags
+            # new_flags = (
+            #     Qt.WindowType.Window |
+            #     Qt.WindowType.FramelessWindowHint |
+            #     Qt.WindowType.CustomizeWindowHint
+            # )
+            
+            # if should_be_on_top:
+            #     new_flags |= Qt.WindowType.WindowStaysOnTopHint
+                
+            # # Restore geometry before showing to prevent glitches like flashing and
+            # # positioning in the center of the screen before jumping to its saved
+            # # position                
+            # self.setWindowFlags(new_flags)
+            
+            # # For Wayland to re-render the window ie restore it with the new compositor state
+            # self.show()
+            
+            # # Force the OS to acknowledge the new stacking order immediatley
+            # if should_be_on_top:
+            #     self.raise_()
 
     def get_resize_edge(self, pos):
         # Determine which edge or corner the mouse is near for resizing
