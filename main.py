@@ -165,12 +165,20 @@ class KPynotesTrayApp:
         
     def open_settings(self):
         dialog = SettingsDialog()
-        if dialog.exec():
-            # Triggered if the user clicked Save (self.accept())
-            # Future iteration through self.active_windiws to instanly
-            # re-apply stylesheet or update storage directory references
-            for window in self.active_windows.values():
-                window.apply_live_settings()
+        # Connect signal to make "Apply" button update open notes live without
+        # closing the settings dialog
+        dialog.settings_changed.connect(self.on_settings_changed)
+        dialog.exec()
+                
+    def on_settings_changed(self):
+        """Triggered immediately whenever Apply or Ok is clicked in the settings dialog."""
+        # Update storage path in case it changed
+        new_storage_path = self.app_settings.get_storage_path()
+        self.storage.storage_dir = new_storage_path
+        
+        # Re-apply theme and live settings across all open notes
+        for window in self.active_windows.values():
+            window.apply_live_settings()
                 
     def quit_app(self):
         """Ensures all notes save their data before closing."""
