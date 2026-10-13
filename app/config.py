@@ -7,4 +7,4 @@ STORAGE_DIR = "notes_data"
 AUTOSAVE_DELAY_MS = 2000  # 2 seconds
 
 # Window snapping 
-SNAP_MARGIN_PX = 25
+# SNAP_MARGIN_PX = 25
