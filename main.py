@@ -108,18 +108,9 @@ class KPynotesTrayApp:
             return window
         
         window = StickyNoteWindow(note_id=note_id)
-        
-        # Connect the deletion signal to clean up memory
         window.note_deleted.connect(self.on_note_deleted)
-        
-        # Override standard close behavior to keep track in active_windows
-        original_close_event = window.closeEvent
-        def custom_close_event(event):
-            original_close_event(event)
-            
-        window.closeEvent = custom_close_event
-        
-        # Retain window reference in self.active_windows to allow reopening        
+
+        # Keep the Python object so Show All / tray click can reopen a closed note.
         self.active_windows[note_id] = window
         window.show()
         
