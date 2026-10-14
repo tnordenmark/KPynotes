@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "kpynotes"
+version = "0.1.0"
+description = "A lightweight, cross-platform sticky note and scratchpad application built for Linux (KDE Plasma) and Windows."
+authors = ["jtn <jtn@example.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+homepage = "https://github.com/tnordenmark/KPynotes"
+repository = "https://github.com/tnordenmark/KPynotes"
+keywords = ["qt6", "pyside6", "kde", "plasma", "sticky-notes", "scratchpad", "desktop"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Desktop Environment :: KDesktop Environment (KDE)",
+    "Topic :: Office/Business :: News/Notifier",
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.16"
+pyside6 = "^6.8.0"
+
+[tool.poetry.group.dev.dependencies]
+pyinstaller = "^6.0.0"
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+kpynotes = "main:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
