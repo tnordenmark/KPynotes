@@ -69,9 +69,6 @@ class SettingsDialog(QDialog):
         form_layout.addRow("Appearance:", self.theme_combo)
 
         # Behavior checks
-        # Eventual future always on top, not used for now
-        # self.on_top_check = QCheckBox("Keep new notes always on top")
-        # form_layout.addRow("", self.on_top_check)
         self.autostart_check = QCheckBox("Launch KPynotes at system startup")
         self.autostart_check.stateChanged.connect(self._check_dirty_state)
         form_layout.addRow("", self.autostart_check)
@@ -97,8 +94,6 @@ class SettingsDialog(QDialog):
 
     def load_current_settings(self):
         self.path_input.setText(self.app_settings.get_storage_path())
-        # Eventual future always on top, not used for now
-        # self.on_top_check.setChecked(self.app_settings.get_always_on_top())
         self.autostart_check.setChecked(self.app_settings.get_autostart())
 
         theme = self.app_settings.get_theme_override()
@@ -117,7 +112,6 @@ class SettingsDialog(QDialog):
         """Helper to get the current state of the UI inputs"""
         return {
             "storage_path": self.path_input.text(),
-            # "always_on_top": self.on_top_check.isChecked(),
             "autostart": self.autostart_check.isChecked(),
             "theme_override": self.theme_combo.currentIndex(),
         }
@@ -157,15 +151,11 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Autostart Failed",
-                "Failed to enable autostart. Please system permissions.",
+                "Failed to enable autostart. Please check system permissions.",
             )
             # Revert UI to reflect actual state
             self.autostart_check.setChecked(False)
             
-        # Eventual future always on top, not used for now
-        # self.app_settings.set_always_on_top(self.on_top_check.isChecked())
-        self.app_settings.set_autostart(self.autostart_check.isChecked())
-
         theme_idx = self.theme_combo.currentIndex()
         if theme_idx == 1:
             self.app_settings.set_theme_override("light")

@@ -9,6 +9,8 @@ homepage = "https://github.com/tnordenmark/KPynotes"
 repository = "https://github.com/tnordenmark/KPynotes"
 keywords = ["qt6", "pyside6", "kde", "plasma", "sticky-notes", "scratchpad", "desktop"]
 
+packages = [{ include = "app" }]
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: X11 Applications :: Qt",
@@ -35,7 +37,7 @@ pyinstaller = "^6.0.0"
 pytest = "^8.0.0"
 
 [tool.poetry.scripts]
-kpynotes = "main:main"
+kpynotes = "app.run:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

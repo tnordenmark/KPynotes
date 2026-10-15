@@ -1,6 +1,7 @@
 # app/ui/main_window.py
+import logging
+
 from PySide6.QtCore import Qt, QTimer, QEvent, Signal, QByteArray
-from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QMessageBox
 from app.ui.components.editor import ScratchpadEditor
 from app.ui.components.titlebar import CustomTitleBar
@@ -11,24 +12,36 @@ from app.core.settings import AppSettings
 # Import config for save trigger timer delay and other settings
 import app.config as config
 
+logger = logging.getLogger(__name__)
+
 
 class StickyNoteWindow(QWidget):
     # Signal to notify tray app
     note_deleted = Signal(str)
 
-    def __init__(self, note_id: str):
+    def __init__(
+        self,
+        note_id: str,
+        app_settings: AppSettings | None = None,
+        storage: LocalStorage | None = None,
+    ):
         super().__init__()
         self.note_id = note_id
         # Prevent auto-saving a deleted note
         self.is_deleted = False
 
-        # Initialize settings
-        self.app_settings = AppSettings()
+        # Shared settings/storage instances are injected by the tray app so
+        # every window and the tray operate on the same configuration.
+        self.app_settings = app_settings if app_settings is not None else AppSettings()
+        self.storage = (
+            storage
+            if storage is not None
+            else LocalStorage(storage_dir=self.app_settings.get_storage_path())
+        )
 
-        # Use the dynamic storage path instead of config.STORAGE_DIR
-        self.storage = LocalStorage(storage_dir=self.app_settings.get_storage_path())
-        # Initialize Core Storage from config
-        # self.storage = LocalStorage(storage_dir=config.STORAGE_DIR)
+        # Modification time of our last successful write; used to ignore the
+        # file-watcher events caused by our own saves.
+        self._last_saved_mtime: float | None = None
 
         # Explicitly define the base cursor for the entire window
         self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -43,8 +56,9 @@ class StickyNoteWindow(QWidget):
         # Call apply_stylesheet directly to detect system theme
         self.apply_stylesheet()
 
-        # Liten for OS theme changed and re-apply stylesheet dynamically
-        QApplication.styleHints().colorSchemeChanged.connect(self.apply_stylesheet)
+        # Note: OS theme changes are now centrally managed by the tray app
+        # (see KPynotesTrayApp._on_color_scheme_changed), so we no longer
+        # need to connect to colorSchemeChanged in each window instance.
 
         self.load_data()
         self.setup_autosave()
@@ -61,12 +75,6 @@ class StickyNoteWindow(QWidget):
             | Qt.WindowType.CustomizeWindowHint
         )
 
-        # If get_always_on_top returns True, append the Always on Top
-        # window flag dynamically
-        # Eventual future always on top, not used for now
-        # if self.app_settings.get_always_on_top():
-        #     flags |= Qt.WindowType.WindowStaysOnTopHint
-
         # Apply combined window flags
         self.setWindowFlags(flags)
 
@@ -80,7 +88,6 @@ class StickyNoteWindow(QWidget):
         self.setMouseTracking(True)
 
     def init_ui(self):
-        self.title_bar = CustomTitleBar(title="KPynotes", parent=self)
         # Base layout, 0 margins so the frame dictates the borders
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -143,56 +150,12 @@ class StickyNoteWindow(QWidget):
         self.setStyleSheet(get_note_stylesheet(is_dark))
 
     def apply_live_settings(self):
-        """Called by the system tray when settings are modified."""
-        # Refresh settings cache
-        self.app_settings = AppSettings()
+        """Called by the tray app when settings change.
 
-        # Update storage path
-        new_storage_path = self.app_settings.get_storage_path()
-        if self.storage.storage_dir != new_storage_path:
-            self.storage = LocalStorage(storage_dir=new_storage_path)
-            # Force a save to ensure the note exists in the new directory
-            self.save_data()
-
-        # Update theme
+        Storage-path switching is handled centrally by the tray app (which
+        owns the shared storage instance); windows only refresh their theme.
+        """
         self.apply_stylesheet()
-
-        # Update Always on top window flag
-        # Eventual future always on top, not used for now
-        # should_be_on_top = self.app_settings.get_always_on_top()
-
-        # Check if the flag is currently applied using bitwise AND
-        # is_on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
-
-        # if should_be_on_top != is_on_top:
-            # Changing flags destroys and recreates the native window
-            # Save geometry so the OS window manager doesn't reposition it
-            # current_geometry = self.saveGeometry()
-            
-            # Explicitly hide the window before changing hints
-            # self.hide()
-            
-            # # Define all base flags
-            # new_flags = (
-            #     Qt.WindowType.Window |
-            #     Qt.WindowType.FramelessWindowHint |
-            #     Qt.WindowType.CustomizeWindowHint
-            # )
-            
-            # if should_be_on_top:
-            #     new_flags |= Qt.WindowType.WindowStaysOnTopHint
-                
-            # # Restore geometry before showing to prevent glitches like flashing and
-            # # positioning in the center of the screen before jumping to its saved
-            # # position                
-            # self.setWindowFlags(new_flags)
-            
-            # # For Wayland to re-render the window ie restore it with the new compositor state
-            # self.show()
-            
-            # # Force the OS to acknowledge the new stacking order immediatley
-            # if should_be_on_top:
-            #     self.raise_()
 
     def get_resize_edge(self, pos):
         # Determine which edge or corner the mouse is near for resizing
@@ -324,36 +287,83 @@ class StickyNoteWindow(QWidget):
             self.editor.setFocus()
 
     def save_data(self):
-        # .saveGeometry() -> QByteArray
-        # .toHex()        -> QByteArray
-        # .data()         -> memoryview or bytes (stubs vs runtime)
-        # bytes(...)      -> guarantees standard Python bytes for the type checker
-        # saveGeometry() packs position, size and screen index to a hex string
+        """Saves the current note data to storage."""
+        # A direct save supersedes any pending autosave
+        if hasattr(self, "save_timer"):
+            self.save_timer.stop()
+
+        # .saveGeometry() -> QByteArray; .toHex() -> QByteArray
         geometry_hex = bytes(self.saveGeometry().toHex().data()).decode("ascii")
 
-        # The Window coordinates the UI data with the Core storage
-        self.storage.save_note(
+        saved = self.storage.save_note(
             note_id=self.note_id,
             geometry=geometry_hex,
-            markdown_content=self.editor.toMarkdown(),
+            content=self.editor.toPlainText(),
         )
+        if saved:
+            # Remember our own write so the file watcher can ignore it
+            self._last_saved_mtime = self.storage.get_note_mtime(self.note_id)
+        else:
+            logger.warning(
+                "Failed to save note '%s'; will retry on next change.", self.note_id
+            )
 
-    # Load and auto-save methods
     def load_data(self):
         data = self.storage.load_note(self.note_id)
         if not data:
             return
 
-        # Check for the preferred markdown content or legacy content
-        content = data.get("markdown_content") or data.get("content")
+        # Prefer the current schema, fall back to the legacy key
+        content = data.get("content") or data.get("markdown_content")
         if content:
-            self.editor.setMarkdown(content)
+            self.editor.setPlainText(content)
 
         # Restore monitor, position and size seamlessly
         if "geometry" in data:
             # Convert the stored hex string back to a QByteArray
             geometry_bytes = QByteArray.fromHex(data["geometry"].encode("ascii"))
             self.restoreGeometry(geometry_bytes)
+
+        # This on-disk version is now the baseline we last saw
+        self._last_saved_mtime = self.storage.get_note_mtime(self.note_id)
+
+    def reload_from_storage(self):
+        """Reloads content from disk if changed externally, preserving cursor position."""
+        # Local unsaved edits win: flush them and skip the external copy.
+        if self.save_timer.isActive():
+            self.save_timer.stop()
+            self.save_data()
+            return
+
+        # Our own writes trigger the file watcher; ignore those events.
+        mtime = self.storage.get_note_mtime(self.note_id)
+        if mtime is not None and mtime == self._last_saved_mtime:
+            return
+
+        updated_note = self.storage.load_note(self.note_id)
+        if not updated_note:
+            return
+
+        new_text = (
+            updated_note.get("content") or updated_note.get("markdown_content") or ""
+        )
+        current_text = self.editor.toPlainText()
+
+        # Only update if content actually differs on disk
+        if new_text == current_text:
+            return
+
+        # Save cursor position before updating text
+        cursor = self.editor.textCursor()
+        position = cursor.position()
+
+        # Block signals to prevent the reload itself triggering an autosave
+        self.editor.blockSignals(True)
+        self.editor.setPlainText(new_text)
+        # Restore cursor position bounded to new content length
+        cursor.setPosition(min(position, len(new_text)))
+        self.editor.setTextCursor(cursor)
+        self.editor.blockSignals(False)
 
     def setup_autosave(self):
         # Set up a timer to auto-save the note every AUTOSAVE_DELAY_MS milliseconds
@@ -368,8 +378,10 @@ class StickyNoteWindow(QWidget):
         self.editor.textChanged.connect(self.trigger_autosave)
 
     def trigger_autosave(self):
-        # Restart the timer on each change
-        self.save_timer.start()
+        # Restart the timer on each change. Guarded because resizeEvent can
+        # call this before the autosave timer exists.
+        if hasattr(self, "save_timer"):
+            self.save_timer.start()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -402,5 +414,11 @@ class StickyNoteWindow(QWidget):
         # Only save if NOT deleting
         if not self.is_deleted:
             self.save_data()
+
+        # For deleted notes, explicitly schedule the window for deletion
+        # to prevent memory leaks (the reference in active_windows was already
+        # removed by on_note_deleted before close() was called).
+        if self.is_deleted:
+            self.deleteLater()
 
         event.accept()
