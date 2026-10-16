@@ -1,132 +1,225 @@
+# app/core/sync/base_sync.py
+"""Cloud-sync protocol for KPynotes.
+
+This module defines the *contract* between the application and a sync
+provider plugin. It is deliberately free of Qt and of any network code:
+
+* ``BaseSyncEngine``    - the abstract API every provider plugin implements
+* value types           - ``RemoteNote``, ``SyncResult``, error hierarchy
+* ``LocalNoteProvider`` - structural interface to the app's note storage
+* ``SyncStateStore``    - per-note sync bookkeeping (+ in-memory default)
+
+Threading contract
+------------------
+* Engine methods are only ever called from worker threads (``SyncManager``
+  guarantees this); implementations may use internal locks for token refresh.
+* ``is_authenticated()`` must be cheap, side-effect free, and safe to call
+  from the main thread (no network I/O).
+* All other engine methods may block.
+
+Revision tokens
+---------------
+``rev`` is an opaque string that changes whenever the remote note changes
+(Google Drive file ``version``, OneDrive ``eTag``, folder ``mtime:size``).
+``upload_note(..., base_rev)`` implements optimistic concurrency: if the
+remote copy no longer matches ``base_rev``, raise ``SyncConflict``. Passing
+``base_rev=None`` means "create or overwrite unconditionally" (used for the
+first upload of a note or when the caller knowingly replaced a lost file).
+"""
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from dataclasses import dataclass
+from typing import Callable, Protocol
+
+
+# --- value types -----------------------------------------------------------
+
+@dataclass(frozen=True)
+class RemoteNote:
+    """Metadata of one note file on the remote side."""
+    note_id: str
+    rev: str
+    modified: float
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    """Successful outcome of a worker operation."""
+    status: str            # "pushed" | "fetched" | "deleted" | "listed"
+    note_id: str
+    rev: str | None = None
+    data: object = None    # "fetched": note dict; "listed": remote/tombstones
+
+
+# --- errors ----------------------------------------------------------------
+
+class SyncError(Exception):
+    """Base class for sync provider errors."""
+
+
+class SyncTransportError(SyncError):
+    """Transient network/server failure; the manager may retry with backoff."""
+
+    def __init__(self, message: str, retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class SyncConflict(SyncError):
+    """Remote copy changed since ``base_rev`` (optimistic concurrency failure)."""
+
+    def __init__(self, message: str, remote_rev: str | None = None):
+        super().__init__(message)
+        self.remote_rev = remote_rev
+
+
+class AuthExpired(SyncError):
+    """Access token expired or was revoked and could not be refreshed."""
+
+
+class AuthRequired(SyncError):
+    """No usable credentials; the user must sign in first."""
+
+
+# --- engine contract -------------------------------------------------------
+
+# UI hook: the engine asks the application to open a URL in the browser
+# (OAuth authorization page). Called from a worker thread; implementations
+# of the application side must be thread-safe (e.g. a queued signal).
+AuthPrompt = Callable[[str], None]
 
 
 class BaseSyncEngine(ABC):
-    """Abstract Base Class that all cloud sync provider plugins must subclass.
-    
-    Subclasses handle provider-specific authentication, API calls, and local-remote
-    file diffing without needing to manage Qt threading logic directly.
+    """Abstract base class that all cloud sync provider plugins subclass.
+
+    Subclasses handle provider-specific authentication and API calls. They
+    must NOT implement diffing, conflict policy, retries, or threading -
+    ``SyncManager`` owns all of that so every provider behaves identically.
     """
 
     @abstractmethod
-    def get_provider_name(self) -> str:
-        """Returns the human-readable provider name (e.g., 'Google Drive', 'OneDrive')."""
-        pass
+    def provider_id(self) -> str:
+        """Stable machine key for the provider (e.g. 'gdrive', 'folder')."""
+
+    @abstractmethod
+    def display_name(self) -> str:
+        """Human-readable provider name (e.g. 'Google Drive')."""
 
     @abstractmethod
     def is_authenticated(self) -> bool:
-        """Returns True if valid OAuth credentials or access tokens exist."""
-        pass
+        """True if usable credentials exist. Cheap; no network; main-thread safe."""
 
     @abstractmethod
-    def sync_note(self, note_id: str, local_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Uploads local note data or pulls remote changes.
-        
-        Returns the updated note data dictionary if changes occurred,
-        or None if local and remote are already in sync.
-        
-        Raises Exception on network/API errors.
+    def authenticate(self, prompt: AuthPrompt) -> None:
+        """Perform the sign-in flow (may block; runs in a worker thread).
+
+        Uses ``prompt(url)`` to ask the UI to open the authorization page.
+        Raises ``SyncError`` subclasses on failure.
         """
-        pass
 
     @abstractmethod
-    def delete_note(self, note_id: str) -> bool:
-        """Deletes the remote note file corresponding to note_id.
-        
-        Returns True on successful deletion.
+    def sign_out(self) -> None:
+        """Forget credentials/tokens. Must be idempotent."""
+
+    @abstractmethod
+    def list_remote(self) -> dict[str, RemoteNote]:
+        """Return metadata for every note currently on the remote side."""
+
+    @abstractmethod
+    def fetch_note(self, note_id: str) -> tuple[dict, str]:
+        """Download one note. Returns ``(note_data, rev)``."""
+
+    @abstractmethod
+    def upload_note(self, note_id: str, data: dict, base_rev: str | None) -> str:
+        """Upload one note with optimistic concurrency.
+
+        Returns the new remote ``rev``. Raises ``SyncConflict`` (with the
+        current ``remote_rev``) if the remote copy no longer matches
+        ``base_rev``; ``base_rev=None`` creates/overwrites unconditionally.
         """
-        pass
+
+    @abstractmethod
+    def delete_remote(self, note_id: str, base_rev: str | None) -> bool:
+        """Delete the remote note file. Returns True if it is gone."""
+
+    @abstractmethod
+    def list_tombstones(self) -> dict[str, float]:
+        """Return ``note_id -> deletion timestamp`` for remote deletions."""
+
+    @abstractmethod
+    def record_tombstone(self, note_id: str, deleted_ts: float) -> None:
+        """Publish a deletion so other devices can honor it."""
+
+    @abstractmethod
+    def clear_tombstone(self, note_id: str) -> None:
+        """Retract a tombstone (a local edit "won" over a remote delete)."""
 
 
-class SyncWorkerSignals(QObject):
-    """Qt Signals instance for emitting worker status back to the main GUI thread.
-    
-    QRunnable does not inherit from QObject, so signals must be declared on
-    a dedicated helper QObject instance.
+# --- application-side interfaces -------------------------------------------
+
+class LocalNoteProvider(Protocol):
+    """Structural interface to the application's note storage.
+
+    The real implementation wraps ``LocalStorage``; tests use a dict-backed
+    fake. All calls happen on the main thread.
     """
-    started = Signal(str)                          # note_id
-    finished = Signal(str, object)                 # note_id, updated_note_data (dict | None)
-    failed = Signal(str, str)                      # note_id, error_message
+
+    def list_local_notes(self) -> dict[str, float]:
+        """Return ``note_id -> last modified timestamp`` for all local notes."""
+
+    def read_note(self, note_id: str) -> dict | None:
+        """Return the note dict, or None if it does not exist."""
+
+    def write_note(self, note_id: str, data: dict) -> None:
+        """Persist a note pulled from the remote side."""
+
+    def remove_note(self, note_id: str) -> None:
+        """Delete a note locally (remote tombstone honored)."""
 
 
-class SyncWorker(QRunnable):
-    """Background task executed inside QThreadPool.
-    
-    Runs cloud IO asynchronously to keep the PySide6 main loop responsive.
-    """
+class SyncStateStore(ABC):
+    """Per-note sync bookkeeping. All access happens on the main thread."""
 
-    def __init__(self, engine: BaseSyncEngine, note_id: str, local_data: dict[str, Any], action: str = "sync"):
-        super().__init__()
-        self.engine = engine
-        self.note_id = note_id
-        self.local_data = local_data
-        self.action = action  # "sync" or "delete"
-        self.signals = SyncWorkerSignals()
+    @abstractmethod
+    def last_rev(self, note_id: str) -> str | None:
+        """Remote rev of the last converged (conflict-free) sync, if any."""
 
-        # Ensure the runnable object cleans itself up after completion
-        self.setAutoDelete(True)
+    @abstractmethod
+    def set_last_rev(self, note_id: str, rev: str) -> None: ...
 
-    @Slot()
-    def run(self):
-        """Executed automatically in a background thread by QThreadPool."""
-        self.signals.started.emit(self.note_id)
-        
-        try:
-            if self.action == "sync":
-                result = self.engine.sync_note(self.note_id, self.local_data)
-                self.signals.finished.emit(self.note_id, result)
-            elif self.action == "delete":
-                self.engine.delete_note(self.note_id)
-                self.signals.finished.emit(self.note_id, None)
-        except Exception as exc:
-            self.signals.failed.emit(self.note_id, str(exc))
+    @abstractmethod
+    def last_sync(self, note_id: str) -> float:
+        """Local timestamp of the last successful sync (0.0 if never)."""
+
+    @abstractmethod
+    def set_last_sync(self, note_id: str, ts: float) -> None: ...
+
+    @abstractmethod
+    def forget(self, note_id: str) -> None:
+        """Drop all bookkeeping for a note (deleted everywhere)."""
 
 
-class SyncManager(QObject):
-    """Orchestrates sync workers across QThreadPool and routes events to KPynotes.
-    
-    Provides a simple interface for KPynotesTrayApp to dispatch background sync operations.
-    """
-    sync_completed = Signal(str, object)  # note_id, updated_data
-    sync_failed = Signal(str, str)        # note_id, error_msg
+class InMemorySyncStateStore(SyncStateStore):
+    """Default, non-persistent store. A file-backed store lands with the
+    first provider integration (Phase B)."""
 
-    def __init__(self, parent: QObject | None = None):
-        super().__init__(parent)
-        self.engine: BaseSyncEngine | None = None
-        self.thread_pool = QThreadPool.globalInstance()
+    def __init__(self) -> None:
+        self._revs: dict[str, str] = {}
+        self._syncs: dict[str, float] = {}
 
-    def set_engine(self, engine: BaseSyncEngine):
-        """Registers an active sync plugin engine (e.g., GoogleDriveEngine)."""
-        self.engine = engine
+    def last_rev(self, note_id: str) -> str | None:
+        return self._revs.get(note_id)
 
-    def sync_note_async(self, note_id: str, local_data: dict[str, Any]):
-        """Schedules a note synchronization task in the background thread pool."""
-        if not self.engine or not self.engine.is_authenticated():
-            return
+    def set_last_rev(self, note_id: str, rev: str) -> None:
+        self._revs[note_id] = rev
 
-        worker = SyncWorker(self.engine, note_id, local_data, action="sync")
-        worker.signals.finished.connect(self._on_worker_finished)
-        worker.signals.failed.connect(self._on_worker_failed)
-        
-        self.thread_pool.start(worker)
+    def last_sync(self, note_id: str) -> float:
+        return self._syncs.get(note_id, 0.0)
 
-    def delete_note_async(self, note_id: str):
-        """Schedules a remote deletion task in the background thread pool."""
-        if not self.engine or not self.engine.is_authenticated():
-            return
+    def set_last_sync(self, note_id: str, ts: float) -> None:
+        self._syncs[note_id] = ts
 
-        worker = SyncWorker(self.engine, note_id, local_data={}, action="delete")
-        worker.signals.finished.connect(self._on_worker_finished)
-        worker.signals.failed.connect(self._on_worker_failed)
-        
-        self.thread_pool.start(worker)
-
-    @Slot(str, object)
-    def _on_worker_finished(self, note_id: str, updated_data: Any):
-        self.sync_completed.emit(note_id, updated_data)
-
-    @Slot(str, str)
-    def _on_worker_failed(self, note_id: str, error_msg: str):
-        self.sync_failed.emit(note_id, error_msg)
+    def forget(self, note_id: str) -> None:
+        self._revs.pop(note_id, None)
+        self._syncs.pop(note_id, None)

@@ -2,7 +2,7 @@
 name = "kpynotes"
 version = "0.1.0"
 description = "A lightweight, cross-platform sticky note and scratchpad application built for Linux (KDE Plasma) and Windows."
-authors = ["jtn <jtn@example.com>"]
+authors = ["jtn <t.nordenmark@outlook.com>"]
 license = "GPL-3.0-or-later"
 readme = "README.md"
 homepage = "https://github.com/tnordenmark/KPynotes"
